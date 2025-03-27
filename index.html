@@ -2,32 +2,110 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>USA Map</title>
+  <title>ZIP Radius Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <style>
-    #map {
-      height: 100vh;
-      width: 100%;
+    #map { height: 90vh; }
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    .upload { padding: 1rem; }
+    #loading {
+      display: none;
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      padding: 10px 20px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      z-index: 1000;
+    }
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #ccc;
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 10px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
   </style>
 </head>
 <body>
-  <div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    // Создаем карту с фокусом на США
-    const map = L.map('map').setView([39.8283, -98.5795], 4); // центр США
+<div class="upload">
+  <input type="file" id="csvFile" accept=".csv" />
+</div>
+<div id="loading">Loading...<span id="progressText"></span><div class="spinner"></div></div>
+<div id="map"></div>
 
-    // Добавляем слой карты (tiles)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
-  </script>
+<script>
+  const map = L.map('map').setView([39.8283, -98.5795], 4); // Center of USA
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const loading = document.getElementById('loading');
+  const progressText = document.getElementById('progressText');
+
+  document.getElementById('csvFile').addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    loading.style.display = 'block';
+    progressText.textContent = '';
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async function (results) {
+        const validRows = results.data.filter(row => row["Zip code (of service area)"] && !isNaN(parseFloat(row["Service Radius"])));
+        const total = validRows.length;
+
+        for (let i = 0; i < total; i++) {
+          const row = validRows[i];
+          const zip = row["Zip code (of service area)"];
+          const radiusMiles = parseFloat(row["Service Radius"]);
+
+          progressText.textContent = `Processing ZIP ${i + 1} of ${total}...`;
+
+          try {
+            const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const lat = parseFloat(data.places[0].latitude);
+            const lon = parseFloat(data.places[0].longitude);
+
+            L.marker([lat, lon]).addTo(map)
+              .bindPopup(`ZIP: ${zip}<br>Radius: ${radiusMiles} mi`);
+
+            L.circle([lat, lon], {
+              radius: radiusMiles * 1609.34, // miles to meters
+              color: 'blue',
+              fillOpacity: 0.2
+            }).addTo(map);
+
+          } catch (err) {
+            console.error(`Failed to fetch coordinates for ZIP: ${zip}`);
+          }
+        }
+
+        loading.style.display = 'none';
+      }
+    });
+  });
+</script>
+
 </body>
 </html>

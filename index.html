@@ -52,6 +52,14 @@
       font-size: 16px;
       cursor: pointer;
     }
+    #zipList {
+      margin: 1rem;
+      padding: 1rem;
+      border: 1px solid #ccc;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 14px;
+    }
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -68,6 +76,8 @@
   <div class="spinner"></div>
 </div>
 
+<div id="zipList"></div>
+
 <button id="showMapButton">Show on map</button>
 
 <div id="map"></div>
@@ -78,11 +88,18 @@
   const loading = document.getElementById('loading');
   const progressText = document.getElementById('progressText');
   const showMapButton = document.getElementById('showMapButton');
-  let allMarkersBounds = []; // Массив для сохранения координат точек
+  const zipListDiv = document.getElementById('zipList');
+  let allMarkersBounds = []; // Array to store coordinates for auto zoom
+  let processedZips = []; // Array to store processed ZIP info
 
   document.getElementById('csvFile').addEventListener('change', function (e) {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Clear previous results
+    zipListDiv.innerHTML = "";
+    processedZips = [];
+    allMarkersBounds = [];
 
     loading.style.display = 'block';
     progressText.textContent = '';
@@ -106,9 +123,10 @@
           mapInitialized = true;
         }
 
+        // Process each row
         for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          // Если в колонке несколько ZIP, разделяем их запятыми
+          // Split ZIP codes by comma in case there are multiple
           const zipCodes = row["Zip code (of service area)"]
                             .split(",")
                             .map(z => z.trim())
@@ -129,7 +147,10 @@
               // Save coordinates for auto zoom
               allMarkersBounds.push([lat, lon]);
 
-              // Add marker with popup
+              // Save info for list display
+              processedZips.push({ zip, lat, lon, radiusMiles });
+
+              // Add marker with popup to the map
               L.marker([lat, lon]).addTo(map)
                 .bindPopup(`ZIP: ${zip}<br>Radius: ${radiusMiles} mi`);
 
@@ -147,6 +168,19 @@
         }
 
         loading.style.display = 'none';
+
+        // Build the ZIP list and display it
+        if (processedZips.length > 0) {
+          let html = "<h3>Processed ZIP Coordinates:</h3><ul>";
+          processedZips.forEach(item => {
+            html += `<li>ZIP: ${item.zip} — Lat: ${item.lat}, Lon: ${item.lon}, Radius: ${item.radiusMiles} mi</li>`;
+          });
+          html += "</ul>";
+          zipListDiv.innerHTML = html;
+        } else {
+          zipListDiv.innerHTML = "<p>No valid ZIP codes processed.</p>";
+        }
+
         showMapButton.style.display = 'inline-block'; // Show the "Show on map" button
 
         // Auto-fit map bounds if there are markers

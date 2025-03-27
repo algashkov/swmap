@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Contractor Heatmap</title>
+  <title>Contractor Heatmap with Custom Gradient</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- Leaflet CSS и JS -->
+  <!-- Leaflet CSS and JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- PapaParse для обработки CSV -->
+  <!-- PapaParse for CSV processing -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-  <!-- Leaflet.heat плагин для тепловой карты -->
+  <!-- Leaflet.heat plugin for heatmap -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
   <style>
     #map {
@@ -70,10 +70,10 @@
 </head>
 <body>
 
-<!-- Иконка версии (новая иконка) -->
-<div id="versionIndicator">🌡️</div>
+<!-- Version indicator (new icon) -->
+<div id="versionIndicator">🌈</div>
 
-<!-- Форма загрузки CSV -->
+<!-- CSV upload form -->
 <div class="upload">
   <label for="csvFile">Upload Contractors CSV (with "Zip code (of service area)"):</label>
   <input type="file" id="csvFile" accept=".csv" />
@@ -84,10 +84,10 @@
   <div class="spinner"></div>
 </div>
 
-<!-- Кнопка для показа тепловой карты -->
+<!-- Button to show heatmap -->
 <button id="showHeatmapButton">Show Heatmap</button>
 
-<!-- Контейнер карты -->
+<!-- Map container -->
 <div id="map"></div>
 
 <script>
@@ -97,12 +97,12 @@
   const progressText = document.getElementById('progressText');
   const showHeatmapButton = document.getElementById('showHeatmapButton');
   
-  // Ограничение – обрабатываем только первые 100 строк
+  // Limit processing to first 100 rows
   const MAX_ROWS = 100;
-  const heatPoints = []; // Массив точек для тепловой карты
-  const boundsArray = []; // Для автоподгонки масштаба
+  const heatPoints = []; // Array for heatmap points: [lat, lon, intensity]
+  const boundsArray = []; // For auto-zooming the map
   
-  // Функция для получения координат по ZIP через Zippopotam.us
+  // Function to fetch coordinates for a given ZIP using Zippopotam.us API
   async function getCoordinates(zip) {
     try {
       const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
@@ -117,12 +117,12 @@
     }
   }
   
-  // Обработка CSV
+  // Process CSV file
   document.getElementById('csvFile').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
     
-    // Сброс предыдущих данных
+    // Reset previous data
     heatPoints.length = 0;
     boundsArray.length = 0;
     
@@ -132,19 +132,19 @@
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      preview: MAX_ROWS,
+      preview: MAX_ROWS, // Process only first 100 rows
       complete: async function(results) {
-        const rows = results.data; // Уже максимум 100 строк
+        const rows = results.data; // Already max 100 rows
         let processedCount = 0;
         for (let i = 0; i < rows.length; i++) {
           const row = rows[i];
           if (!row["Zip code (of service area)"]) continue;
-          // Если в поле несколько ZIP-кодов, берем первый
+          // If multiple ZIP codes in one field, take the first
           const zip = row["Zip code (of service area)"].split(",")[0].trim();
           progressText.textContent = `Processing ${processedCount + 1} of ${rows.length} (${zip})...`;
           const coords = await getCoordinates(zip);
           if (coords) {
-            // Добавляем точку: формат [lat, lon, intensity] (интенсивность 1)
+            // Add point with intensity 1
             heatPoints.push([coords.lat, coords.lon, 1]);
             boundsArray.push([coords.lat, coords.lon]);
             processedCount++;
@@ -156,7 +156,7 @@
     });
   });
   
-  // При нажатии на кнопку показываем карту с тепловой картой
+  // On button click, show map with heatmap layer
   showHeatmapButton.addEventListener('click', function() {
     document.getElementById('map').style.display = 'block';
     showHeatmapButton.style.display = 'none';
@@ -169,14 +169,15 @@
       mapInitialized = true;
     }
     
-    // Создаем тепловой слой
+    // Create heatmap layer with custom gradient: blue at 0, red at maximum
     const heatLayer = L.heatLayer(heatPoints, {
       radius: 25,
       blur: 15,
-      maxZoom: 17
+      maxZoom: 17,
+      gradient: { 0: 'blue', 1: 'red' }
     }).addTo(map);
     
-    // Автоподгонка карты по всем точкам
+    // Auto-fit map bounds if there are points
     if (boundsArray.length > 0) {
       map.fitBounds(boundsArray);
     }

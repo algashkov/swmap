@@ -2,17 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Contractor Density Map</title>
+  <title>Supply and Demand Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- Leaflet CSS and JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- PapaParse для CSV -->
+  <!-- PapaParse for CSV -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <style>
     #map {
       height: 90vh;
-      display: none; /* Скрываем до нажатия кнопки */
+      display: none;
     }
     body {
       font-family: sans-serif;
@@ -26,6 +26,10 @@
     }
     .upload {
       padding: 1rem;
+    }
+    .upload label {
+      font-weight: bold;
+      margin-right: 0.5rem;
     }
     #loading {
       display: none;
@@ -67,196 +71,198 @@
 <body>
 
 <!-- Emoji indicator (новая версия) -->
-<div id="versionIndicator">🔧</div>
+<div id="versionIndicator">💡</div>
 
-<!-- Форма загрузки CSV -->
+<!-- Форма загрузки для поставки -->
 <div class="upload">
-  <input type="file" id="csvFile" accept=".csv" />
+  <label for="supplyFile">Upload Supply CSV (Contractors):</label>
+  <input type="file" id="supplyFile" accept=".csv" />
+</div>
+
+<!-- Форма загрузки для спроса -->
+<div class="upload">
+  <label for="demandFile">Upload Demand CSV (Zip / Postal Code, Total Searches):</label>
+  <input type="file" id="demandFile" accept=".csv" />
 </div>
 
 <div id="loading">
-  Loading...<span id="progressText"></span>
+  Loading... <span id="progressText"></span>
   <div class="spinner"></div>
 </div>
 
 <!-- Кнопка для показа карты -->
-<button id="showMapButton">Show on map</button>
+<button id="showMapButton">Show map</button>
 
 <!-- Контейнер карты -->
 <div id="map"></div>
 
 <script>
+  // Глобальные переменные
   let mapInitialized = false;
   let map;
   const loading = document.getElementById('loading');
   const progressText = document.getElementById('progressText');
   const showMapButton = document.getElementById('showMapButton');
-  let allMarkersBounds = []; // Для автоподгонки масштаба по маркерам
-  const MAX_ZIPS = 100; // Обрабатываем первые 100 ZIP-кодов
   
-  // Подсчет контракторов по штатам
-  const stateCounts = {}; // Формат: { "TX": 5, "SC": 3, ... }
-
-  // Маппинг аббревиатур в полные имена штатов (GeoJSON использует полные имена)
-  const stateAbbrevToName = {
-    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
-    "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
-    "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
-    "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
-    "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
-    "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
-    "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
-    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
-    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
-    "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
-    "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
-    "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
-    "WI": "Wisconsin", "WY": "Wyoming"
-  };
-
-  // Обратное отображение: полное имя -> аббревиатура
-  const stateNameToAbbrev = {};
-  for (const abbr in stateAbbrevToName) {
-    stateNameToAbbrev[stateAbbrevToName[abbr]] = abbr;
+  // Слои для поставки (Supply) и спроса (Demand)
+  let supplyLayer = L.layerGroup();
+  let demandLayer = L.layerGroup();
+  
+  // Массивы для автоподгонки карты
+  let supplyBounds = [];
+  let demandBounds = [];
+  
+  // Флаги обработки файлов
+  let supplyProcessed = false;
+  let demandProcessed = false;
+  
+  // Ограничения на обработку записей
+  const MAX_SUPPLY = 5000; // Можно обработать все или ограничить
+  const MAX_DEMAND = 1000; // Ограничим, если нужно
+  
+  // Функция получения координат по ZIP через Zippopotam.us
+  async function getCoordinates(zip) {
+    try {
+      const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const lat = parseFloat(data.places[0].latitude);
+      const lon = parseFloat(data.places[0].longitude);
+      return { lat, lon };
+    } catch (err) {
+      console.error(`Error fetching ZIP ${zip}:`, err);
+      return null;
+    }
   }
-
-  // Загрузка и обработка CSV
-  document.getElementById('csvFile').addEventListener('change', function (e) {
+  
+  // Обработка CSV для поставки (Supply - Contractors)
+  document.getElementById('supplyFile').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
-
-    // Сброс предыдущих результатов
-    allMarkersBounds = [];
-    // Сброс подсчета контракторов по штатам
-    for (const key in stateCounts) { delete stateCounts[key]; }
-
+    
+    // Сброс предыдущих данных
+    supplyLayer.clearLayers();
+    supplyBounds = [];
+    supplyProcessed = false;
+    
     loading.style.display = 'block';
-    progressText.textContent = '';
-
+    progressText.textContent = 'Processing Supply...';
+    
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: async function (results) {
-        const validRows = results.data.filter(row =>
-          row["Zip code (of service area)"] &&
-          !isNaN(parseFloat(row["Service Radius"]))
-        );
-        const total = validRows.length;
+      complete: async function(results) {
         let processedCount = 0;
-        
-        // Подсчет контракторов по штатам (используем все строки, где указан штат)
-        results.data.forEach(row => {
-          const state = row["State (of service area)"];
-          if (state && state.trim() !== "") {
-            const st = state.trim();
-            stateCounts[st] = (stateCounts[st] || 0) + 1;
-          }
-        });
-
-        // Инициализация карты (скрыта до нажатия кнопки)
-        if (!mapInitialized) {
-          map = L.map('map').setView([39.8283, -98.5795], 4);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-          }).addTo(map);
-          mapInitialized = true;
-        }
-
-        // Обработка строк для добавления точек (контракторов)
-        outerLoop:
-        for (let i = 0; i < total; i++) {
-          const row = validRows[i];
-          // Если в поле несколько ZIP-кодов, разделяем запятыми
-          const zipCodes = row["Zip code (of service area)"]
-                            .split(",")
-                            .map(z => z.trim())
-                            .filter(z => z !== "");
-          for (let j = 0; j < zipCodes.length; j++) {
-            if (processedCount >= MAX_ZIPS) break outerLoop;
-            const zip = zipCodes[j];
-            progressText.textContent = `Processing contractor ${processedCount + 1} of ${MAX_ZIPS} (${zip})...`;
-
-            try {
-              const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
-              if (!res.ok) continue;
-              const data = await res.json();
-              const lat = parseFloat(data.places[0].latitude);
-              const lon = parseFloat(data.places[0].longitude);
-
-              // Сохраняем координаты для автоподгонки карты
-              allMarkersBounds.push([lat, lon]);
-              processedCount++;
-
-              // Добавляем маркер (точку) для контракторa
-              L.marker([lat, lon]).addTo(map)
-                .bindPopup(`ZIP: ${zip}`);
-
-            } catch (err) {
-              console.error(`Failed to fetch coordinates for ZIP: ${zip}`);
-            }
+        const rows = results.data;
+        for (let i = 0; i < rows.length; i++) {
+          if (processedCount >= MAX_SUPPLY) break;
+          const row = rows[i];
+          if (!row["Zip code (of service area)"]) continue;
+          // Если в поле несколько ZIP, берем первый
+          const zip = row["Zip code (of service area)"].split(",")[0].trim();
+          const coords = await getCoordinates(zip);
+          if (coords) {
+            supplyBounds.push([coords.lat, coords.lon]);
+            // Добавляем маркер для контракторa
+            L.marker([coords.lat, coords.lon])
+              .bindPopup(`Contractor<br>ZIP: ${zip}`)
+              .addTo(supplyLayer);
+            processedCount++;
+            progressText.textContent = `Supply: Processed ${processedCount} of ${rows.length}`;
           }
         }
-
-        loading.style.display = 'none';
-        showMapButton.style.display = 'inline-block';
-
-        // Автоподгонка карты по маркерам
-        if (allMarkersBounds.length > 0 && mapInitialized) {
-          map.fitBounds(allMarkersBounds);
-        }
-
-        // Добавляем слой плотности по штатам с 20 шагами градации
-        fetch("https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json")
-          .then(response => response.json())
-          .then(geojsonData => {
-            // Вычисляем min и max по количеству контракторов
-            let counts = Object.values(stateCounts);
-            let minCount = Math.min(...counts);
-            let maxCount = Math.max(...counts);
-            // Функция getColor с 20 ступенями: от желтого (hsl(60)) до красного (hsl(0))
-            function getColor(d) {
-              if (maxCount === minCount) return "hsl(60, 100%, 50%)";
-              let step = (maxCount - minCount) / 20;
-              let index = Math.floor((d - minCount) / step);
-              if (index > 19) index = 19;
-              let hue = 60 - (60 / 19) * index; // 60 - желтый, 0 - красный
-              return "hsl(" + hue + ", 100%, 50%)";
-            }
-            // Функция стиля для слоя штатов
-            function style(feature) {
-              const stateFullName = feature.properties.name;
-              const abbr = stateNameToAbbrev[stateFullName];
-              const count = stateCounts[abbr] || 0;
-              return {
-                fillColor: getColor(count),
-                weight: 2,
-                opacity: 1,
-                color: 'white',
-                dashArray: '3',
-                fillOpacity: 0.7
-              };
-            }
-            const statesLayer = L.geoJson(geojsonData, { style: style });
-            statesLayer.addTo(map);
-            statesLayer.bringToBack(); // Перемещаем слой штатов на задний план
-          })
-          .catch(err => {
-            console.error("Error loading US States GeoJSON:", err);
-          });
+        supplyProcessed = true;
+        checkProcessingComplete();
       }
     });
   });
-
-  // При нажатии на кнопку показываем карту
+  
+  // Обработка CSV для спроса (Demand)
+  document.getElementById('demandFile').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Сброс предыдущих данных
+    demandLayer.clearLayers();
+    demandBounds = [];
+    demandProcessed = false;
+    
+    loading.style.display = 'block';
+    progressText.textContent = 'Processing Demand...';
+    
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async function(results) {
+        let processedCount = 0;
+        const rows = results.data;
+        for (let i = 0; i < rows.length; i++) {
+          if (processedCount >= MAX_DEMAND) break;
+          const row = rows[i];
+          if (!row["Zip / Postal Code"]) continue;
+          const zip = row["Zip / Postal Code"].trim();
+          // Используем колонку "Total Searches" вместо Frequency
+          const totalSearches = parseFloat(row["Total Searches"]) || 0;
+          const coords = await getCoordinates(zip);
+          if (coords) {
+            demandBounds.push([coords.lat, coords.lon]);
+            // Отображаем спрос как круг, радиус пропорционален Total Searches (например, totalSearches * 2000 м)
+            L.circle([coords.lat, coords.lon], {
+              radius: totalSearches * 2000, 
+              color: 'red',
+              fillOpacity: 0.3
+            })
+            .bindPopup(`Demand<br>ZIP: ${zip}<br>Total Searches: ${totalSearches}`)
+            .addTo(demandLayer);
+            processedCount++;
+            progressText.textContent = `Demand: Processed ${processedCount} of ${rows.length}`;
+          }
+        }
+        demandProcessed = true;
+        checkProcessingComplete();
+      }
+    });
+  });
+  
+  // Проверяем, что оба файла обработаны
+  function checkProcessingComplete() {
+    if (supplyProcessed && demandProcessed) {
+      loading.style.display = 'none';
+      showMapButton.style.display = 'inline-block';
+      progressText.textContent = '';
+    }
+  }
+  
+  // При нажатии на кнопку показываем карту с обоими слоями
   showMapButton.addEventListener('click', function() {
     document.getElementById('map').style.display = 'block';
     showMapButton.style.display = 'none';
-    if (map) {
-      map.invalidateSize(); // Пересчитываем размер карты
-      if (allMarkersBounds.length > 0) {
-        map.fitBounds(allMarkersBounds);
-      }
+    
+    if (!mapInitialized) {
+      map = L.map('map').setView([39.8283, -98.5795], 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      mapInitialized = true;
     }
+    
+    // Добавляем слои на карту
+    supplyLayer.addTo(map);
+    demandLayer.addTo(map);
+    
+    // Создаем общий bounds для автоподгонки карты
+    const allBounds = supplyBounds.concat(demandBounds);
+    if (allBounds.length > 0) {
+      map.fitBounds(allBounds);
+    }
+    
+    // Добавляем переключатель слоев
+    const baseLayers = {};
+    const overlayLayers = {
+      "Supply": supplyLayer,
+      "Demand": demandLayer
+    };
+    L.control.layers(baseLayers, overlayLayers).addTo(map);
   });
 </script>
 

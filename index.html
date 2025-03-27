@@ -2,13 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Supply and Demand Map</title>
+  <title>Contractor Heatmap</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- Leaflet CSS и JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- PapaParse для CSV -->
+  <!-- PapaParse для обработки CSV -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <!-- Leaflet.heat плагин для тепловой карты -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
   <style>
     #map {
       height: 90vh;
@@ -26,10 +28,7 @@
     }
     .upload {
       padding: 1rem;
-    }
-    .upload label {
-      font-weight: bold;
-      margin-right: 0.5rem;
+      text-align: center;
     }
     #loading {
       display: none;
@@ -56,12 +55,13 @@
       margin-left: 10px;
       vertical-align: middle;
     }
-    #showMapButton {
+    #showHeatmapButton {
       display: none;
-      margin: 1rem;
+      margin: 1rem auto;
       padding: 10px 20px;
       font-size: 16px;
       cursor: pointer;
+      display: block;
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
@@ -70,19 +70,13 @@
 </head>
 <body>
 
-<!-- Индикатор версии (новая иконка) -->
-<div id="versionIndicator">🔨</div>
+<!-- Иконка версии (новая иконка) -->
+<div id="versionIndicator">🌡️</div>
 
-<!-- Форма загрузки для поставки (Supply CSV: Contractors) -->
+<!-- Форма загрузки CSV -->
 <div class="upload">
-  <label for="supplyFile">Upload Supply CSV (Contractors):</label>
-  <input type="file" id="supplyFile" accept=".csv" />
-</div>
-
-<!-- Форма загрузки для спроса (Demand CSV: ZIP / Postal Code, Total Searches) -->
-<div class="upload">
-  <label for="demandFile">Upload Demand CSV (ZIP / Postal Code, Total Searches):</label>
-  <input type="file" id="demandFile" accept=".csv" />
+  <label for="csvFile">Upload Contractors CSV (with "Zip code (of service area)"):</label>
+  <input type="file" id="csvFile" accept=".csv" />
 </div>
 
 <div id="loading">
@@ -90,37 +84,25 @@
   <div class="spinner"></div>
 </div>
 
-<!-- Кнопка для показа карты -->
-<button id="showMapButton">Show map</button>
+<!-- Кнопка для показа тепловой карты -->
+<button id="showHeatmapButton">Show Heatmap</button>
 
 <!-- Контейнер карты -->
 <div id="map"></div>
 
 <script>
-  // Глобальные переменные и константы
   let mapInitialized = false;
   let map;
   const loading = document.getElementById('loading');
   const progressText = document.getElementById('progressText');
-  const showMapButton = document.getElementById('showMapButton');
+  const showHeatmapButton = document.getElementById('showHeatmapButton');
   
-  // Слои для поставки и спроса
-  let supplyLayer = L.layerGroup();
-  let demandLayer = L.layerGroup();
+  // Ограничение – обрабатываем только первые 100 строк
+  const MAX_ROWS = 100;
+  const heatPoints = []; // Массив точек для тепловой карты
+  const boundsArray = []; // Для автоподгонки масштаба
   
-  // Массивы для автоподгонки карты
-  let supplyBounds = [];
-  let demandBounds = [];
-  
-  // Ограничение – обрабатываем только первые 100 строк каждого файла
-  const MAX_SUPPLY = 100;
-  const MAX_DEMAND = 100;
-  
-  // Флаги обработки файлов
-  let supplyDone = false;
-  let demandDone = false;
-  
-  // Функция для получения координат по ZIP через API Zippopotam.us
+  // Функция для получения координат по ZIP через Zippopotam.us
   async function getCoordinates(zip) {
     try {
       const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
@@ -135,106 +117,49 @@
     }
   }
   
-  // Обработка CSV для поставки (Supply)
-  document.getElementById('supplyFile').addEventListener('change', function(e) {
+  // Обработка CSV
+  document.getElementById('csvFile').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
     
-    // Сброс предыдущих данных для supply
-    supplyLayer.clearLayers();
-    supplyBounds = [];
-    supplyDone = false;
+    // Сброс предыдущих данных
+    heatPoints.length = 0;
+    boundsArray.length = 0;
     
     loading.style.display = 'block';
-    progressText.textContent = 'Processing Supply...';
+    progressText.textContent = 'Processing...';
     
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      preview: MAX_SUPPLY,
+      preview: MAX_ROWS,
       complete: async function(results) {
-        const rows = results.data; // уже максимум 100 строк
+        const rows = results.data; // Уже максимум 100 строк
         let processedCount = 0;
         for (let i = 0; i < rows.length; i++) {
           const row = rows[i];
           if (!row["Zip code (of service area)"]) continue;
-          // Если в поле несколько ZIP, берём первый
+          // Если в поле несколько ZIP-кодов, берем первый
           const zip = row["Zip code (of service area)"].split(",")[0].trim();
+          progressText.textContent = `Processing ${processedCount + 1} of ${rows.length} (${zip})...`;
           const coords = await getCoordinates(zip);
           if (coords) {
-            supplyBounds.push([coords.lat, coords.lon]);
-            L.marker([coords.lat, coords.lon])
-              .bindPopup(`Contractor<br>ZIP: ${zip}`)
-              .addTo(supplyLayer);
+            // Добавляем точку: формат [lat, lon, intensity] (интенсивность 1)
+            heatPoints.push([coords.lat, coords.lon, 1]);
+            boundsArray.push([coords.lat, coords.lon]);
             processedCount++;
-            progressText.textContent = `Supply: Processed ${processedCount} of ${rows.length}`;
           }
         }
-        supplyDone = true;
-        checkProcessingComplete();
+        loading.style.display = 'none';
+        showHeatmapButton.style.display = 'block';
       }
     });
   });
   
-  // Обработка CSV для спроса (Demand)
-  document.getElementById('demandFile').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    // Сброс предыдущих данных для demand
-    demandLayer.clearLayers();
-    demandBounds = [];
-    demandDone = false;
-    
-    loading.style.display = 'block';
-    progressText.textContent = 'Processing Demand...';
-    
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      preview: MAX_DEMAND,
-      complete: async function(results) {
-        const rows = results.data; // уже максимум 100 строк
-        let processedCount = 0;
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
-          if (!row["Zip / Postal Code"]) continue;
-          const zip = row["Zip / Postal Code"].trim();
-          const searches = parseFloat(row["Total Searches"]) || 0;
-          const coords = await getCoordinates(zip);
-          if (coords) {
-            demandBounds.push([coords.lat, coords.lon]);
-            // Отображаем спрос как круг с радиусом, пропорциональным количеству запросов (например, searches * 2000 м)
-            L.circle([coords.lat, coords.lon], {
-              radius: searches * 2000,
-              color: 'red',
-              fillOpacity: 0.3
-            })
-            .bindPopup(`Demand<br>ZIP: ${zip}<br>Total Searches: ${searches}`)
-            .addTo(demandLayer);
-            processedCount++;
-            progressText.textContent = `Demand: Processed ${processedCount} of ${rows.length}`;
-          }
-        }
-        demandDone = true;
-        checkProcessingComplete();
-      }
-    });
-  });
-  
-  // Проверка завершения обработки обоих файлов
-  function checkProcessingComplete() {
-    if (supplyDone && demandDone) {
-      loading.style.display = 'none';
-      progressText.textContent = '';
-      showMapButton.style.display = 'inline-block';
-    }
-  }
-  
-  // При нажатии на кнопку показываем карту с обоими слоями
-  showMapButton.addEventListener('click', function() {
+  // При нажатии на кнопку показываем карту с тепловой картой
+  showHeatmapButton.addEventListener('click', function() {
     document.getElementById('map').style.display = 'block';
-    showMapButton.style.display = 'none';
+    showHeatmapButton.style.display = 'none';
     
     if (!mapInitialized) {
       map = L.map('map').setView([39.8283, -98.5795], 4);
@@ -244,23 +169,17 @@
       mapInitialized = true;
     }
     
-    // Добавляем оба слоя на карту
-    supplyLayer.addTo(map);
-    demandLayer.addTo(map);
+    // Создаем тепловой слой
+    const heatLayer = L.heatLayer(heatPoints, {
+      radius: 25,
+      blur: 15,
+      maxZoom: 17
+    }).addTo(map);
     
-    // Создаем общий bounds для автоподгонки карты
-    const allBounds = supplyBounds.concat(demandBounds);
-    if (allBounds.length > 0) {
-      map.fitBounds(allBounds);
+    // Автоподгонка карты по всем точкам
+    if (boundsArray.length > 0) {
+      map.fitBounds(boundsArray);
     }
-    
-    // Добавляем переключатель слоев
-    const baseLayers = {};
-    const overlayLayers = {
-      "Supply": supplyLayer,
-      "Demand": demandLayer
-    };
-    L.control.layers(baseLayers, overlayLayers).addTo(map);
   });
 </script>
 

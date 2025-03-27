@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <title>Supply and Demand Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- Leaflet CSS and JS -->
+  <!-- Leaflet CSS и JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- PapaParse for CSV -->
+  <!-- PapaParse для CSV -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <style>
     #map {
@@ -70,18 +70,18 @@
 </head>
 <body>
 
-<!-- Emoji indicator (новая версия) -->
-<div id="versionIndicator">💡</div>
+<!-- Индикатор версии (новая иконка) -->
+<div id="versionIndicator">🛠️</div>
 
-<!-- Форма загрузки для поставки -->
+<!-- Форма загрузки для поставки (Supply CSV: Contractors) -->
 <div class="upload">
   <label for="supplyFile">Upload Supply CSV (Contractors):</label>
   <input type="file" id="supplyFile" accept=".csv" />
 </div>
 
-<!-- Форма загрузки для спроса -->
+<!-- Форма загрузки для спроса (Demand CSV: ZIP / Postal Code, Total Searches) -->
 <div class="upload">
-  <label for="demandFile">Upload Demand CSV (Zip / Postal Code, Total Searches):</label>
+  <label for="demandFile">Upload Demand CSV (ZIP / Postal Code, Total Searches):</label>
   <input type="file" id="demandFile" accept=".csv" />
 </div>
 
@@ -97,14 +97,14 @@
 <div id="map"></div>
 
 <script>
-  // Глобальные переменные
+  // Глобальные переменные и константы
   let mapInitialized = false;
   let map;
   const loading = document.getElementById('loading');
   const progressText = document.getElementById('progressText');
   const showMapButton = document.getElementById('showMapButton');
   
-  // Слои для поставки (Supply) и спроса (Demand)
+  // Слои для поставки и спроса
   let supplyLayer = L.layerGroup();
   let demandLayer = L.layerGroup();
   
@@ -112,159 +112,11 @@
   let supplyBounds = [];
   let demandBounds = [];
   
-  // Флаги обработки файлов
-  let supplyProcessed = false;
-  let demandProcessed = false;
+  // Ограничение на обработку – первые 100 строк каждого файла
+  const MAX_SUPPLY = 100;
+  const MAX_DEMAND = 100;
   
-  // Ограничения на обработку записей
-  const MAX_SUPPLY = 5000; // Можно обработать все или ограничить
-  const MAX_DEMAND = 1000; // Ограничим, если нужно
-  
-  // Функция получения координат по ZIP через Zippopotam.us
+  // Функция для получения координат по ZIP через API Zippopotam.us
   async function getCoordinates(zip) {
     try {
-      const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const lat = parseFloat(data.places[0].latitude);
-      const lon = parseFloat(data.places[0].longitude);
-      return { lat, lon };
-    } catch (err) {
-      console.error(`Error fetching ZIP ${zip}:`, err);
-      return null;
-    }
-  }
-  
-  // Обработка CSV для поставки (Supply - Contractors)
-  document.getElementById('supplyFile').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    // Сброс предыдущих данных
-    supplyLayer.clearLayers();
-    supplyBounds = [];
-    supplyProcessed = false;
-    
-    loading.style.display = 'block';
-    progressText.textContent = 'Processing Supply...';
-    
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async function(results) {
-        let processedCount = 0;
-        const rows = results.data;
-        for (let i = 0; i < rows.length; i++) {
-          if (processedCount >= MAX_SUPPLY) break;
-          const row = rows[i];
-          if (!row["Zip code (of service area)"]) continue;
-          // Если в поле несколько ZIP, берем первый
-          const zip = row["Zip code (of service area)"].split(",")[0].trim();
-          const coords = await getCoordinates(zip);
-          if (coords) {
-            supplyBounds.push([coords.lat, coords.lon]);
-            // Добавляем маркер для контракторa
-            L.marker([coords.lat, coords.lon])
-              .bindPopup(`Contractor<br>ZIP: ${zip}`)
-              .addTo(supplyLayer);
-            processedCount++;
-            progressText.textContent = `Supply: Processed ${processedCount} of ${rows.length}`;
-          }
-        }
-        supplyProcessed = true;
-        checkProcessingComplete();
-      }
-    });
-  });
-  
-  // Обработка CSV для спроса (Demand)
-  document.getElementById('demandFile').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    // Сброс предыдущих данных
-    demandLayer.clearLayers();
-    demandBounds = [];
-    demandProcessed = false;
-    
-    loading.style.display = 'block';
-    progressText.textContent = 'Processing Demand...';
-    
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async function(results) {
-        let processedCount = 0;
-        const rows = results.data;
-        for (let i = 0; i < rows.length; i++) {
-          if (processedCount >= MAX_DEMAND) break;
-          const row = rows[i];
-          if (!row["Zip / Postal Code"]) continue;
-          const zip = row["Zip / Postal Code"].trim();
-          // Используем колонку "Total Searches" вместо Frequency
-          const totalSearches = parseFloat(row["Total Searches"]) || 0;
-          const coords = await getCoordinates(zip);
-          if (coords) {
-            demandBounds.push([coords.lat, coords.lon]);
-            // Отображаем спрос как круг, радиус пропорционален Total Searches (например, totalSearches * 2000 м)
-            L.circle([coords.lat, coords.lon], {
-              radius: totalSearches * 2000, 
-              color: 'red',
-              fillOpacity: 0.3
-            })
-            .bindPopup(`Demand<br>ZIP: ${zip}<br>Total Searches: ${totalSearches}`)
-            .addTo(demandLayer);
-            processedCount++;
-            progressText.textContent = `Demand: Processed ${processedCount} of ${rows.length}`;
-          }
-        }
-        demandProcessed = true;
-        checkProcessingComplete();
-      }
-    });
-  });
-  
-  // Проверяем, что оба файла обработаны
-  function checkProcessingComplete() {
-    if (supplyProcessed && demandProcessed) {
-      loading.style.display = 'none';
-      showMapButton.style.display = 'inline-block';
-      progressText.textContent = '';
-    }
-  }
-  
-  // При нажатии на кнопку показываем карту с обоими слоями
-  showMapButton.addEventListener('click', function() {
-    document.getElementById('map').style.display = 'block';
-    showMapButton.style.display = 'none';
-    
-    if (!mapInitialized) {
-      map = L.map('map').setView([39.8283, -98.5795], 4);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
-      mapInitialized = true;
-    }
-    
-    // Добавляем слои на карту
-    supplyLayer.addTo(map);
-    demandLayer.addTo(map);
-    
-    // Создаем общий bounds для автоподгонки карты
-    const allBounds = supplyBounds.concat(demandBounds);
-    if (allBounds.length > 0) {
-      map.fitBounds(allBounds);
-    }
-    
-    // Добавляем переключатель слоев
-    const baseLayers = {};
-    const overlayLayers = {
-      "Supply": supplyLayer,
-      "Demand": demandLayer
-    };
-    L.control.layers(baseLayers, overlayLayers).addTo(map);
-  });
-</script>
-
-</body>
-</html>
+      const res = await

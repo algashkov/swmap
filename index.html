@@ -78,6 +78,7 @@
   const loading = document.getElementById('loading');
   const progressText = document.getElementById('progressText');
   const showMapButton = document.getElementById('showMapButton');
+  let allMarkersBounds = []; // Массив для сохранения координат точек
 
   document.getElementById('csvFile').addEventListener('change', function (e) {
     const file = e.target.files[0];
@@ -105,10 +106,9 @@
           mapInitialized = true;
         }
 
-        // Process each row
         for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          // Split ZIP codes by comma in case there are multiple
+          // Если в колонке несколько ZIP, разделяем их запятыми
           const zipCodes = row["Zip code (of service area)"]
                             .split(",")
                             .map(z => z.trim())
@@ -117,7 +117,7 @@
 
           for (let j = 0; j < zipCodes.length; j++) {
             const zip = zipCodes[j];
-            progressText.textContent = ` Processing ZIP ${i + 1} of ${total} (${zip})...`;
+            progressText.textContent = `Processing ZIP ${i + 1} of ${total} (${zip})...`;
 
             try {
               const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
@@ -126,11 +126,14 @@
               const lat = parseFloat(data.places[0].latitude);
               const lon = parseFloat(data.places[0].longitude);
 
+              // Save coordinates for auto zoom
+              allMarkersBounds.push([lat, lon]);
+
               // Add marker with popup
               L.marker([lat, lon]).addTo(map)
                 .bindPopup(`ZIP: ${zip}<br>Radius: ${radiusMiles} mi`);
 
-              // Draw circle for service radius (convert miles to meters)
+              // Draw circle for service radius (miles to meters)
               L.circle([lat, lon], {
                 radius: radiusMiles * 1609.34,
                 color: 'blue',
@@ -145,6 +148,11 @@
 
         loading.style.display = 'none';
         showMapButton.style.display = 'inline-block'; // Show the "Show on map" button
+
+        // Auto-fit map bounds if there are markers
+        if (allMarkersBounds.length > 0) {
+          map.fitBounds(allMarkersBounds);
+        }
       }
     });
   });
@@ -154,6 +162,10 @@
     showMapButton.style.display = 'none';
     if (map) {
       map.invalidateSize(); // Recalculate map size for proper display
+      // Optional: re-fit the map bounds after showing the map
+      if (allMarkersBounds.length > 0) {
+        map.fitBounds(allMarkersBounds);
+      }
     }
   });
 </script>

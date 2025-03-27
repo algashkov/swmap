@@ -7,12 +7,12 @@
   <!-- Leaflet CSS and JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- PapaParse для обработки CSV -->
+  <!-- PapaParse для CSV -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <style>
     #map {
       height: 90vh;
-      display: none; /* Initially hidden */
+      display: none; /* Скрываем до нажатия кнопки */
     }
     body {
       font-family: sans-serif;
@@ -67,9 +67,9 @@
 <body>
 
 <!-- Emoji indicator (новая версия) -->
-<div id="versionIndicator">🔥</div>
+<div id="versionIndicator">💎</div>
 
-<!-- Upload form -->
+<!-- Форма загрузки CSV -->
 <div class="upload">
   <input type="file" id="csvFile" accept=".csv" />
 </div>
@@ -79,10 +79,10 @@
   <div class="spinner"></div>
 </div>
 
-<!-- Button to show the map -->
+<!-- Кнопка для показа карты -->
 <button id="showMapButton">Show on map</button>
 
-<!-- Map container -->
+<!-- Контейнер карты -->
 <div id="map"></div>
 
 <script>
@@ -91,13 +91,13 @@
   const loading = document.getElementById('loading');
   const progressText = document.getElementById('progressText');
   const showMapButton = document.getElementById('showMapButton');
-  let allMarkersBounds = []; // For markers auto-zoom
-  const MAX_ZIPS = 100; // Limit processing to first 100 ZIP codes
+  let allMarkersBounds = []; // Для автоподгонки масштаба по точкам
+  const MAX_ZIPS = 100; // Обрабатываем первые 100 ZIP-кодов
   
-  // Для расчёта плотности контракторов по штатам
-  const stateCounts = {}; // Будет вида: { "TX": 5, "SC": 3, ... }
+  // Подсчет контракторов по штатам
+  const stateCounts = {}; // Формат: { "TX": 5, "SC": 3, ... }
 
-  // Маппинг из аббревиатур в полные названия штатов (GeoJSON использует полные имена)
+  // Маппинг аббревиатур в полные имена штатов (GeoJSON использует полные имена)
   const stateAbbrevToName = {
     "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
     "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
@@ -114,46 +114,20 @@
     "WI": "Wisconsin", "WY": "Wyoming"
   };
 
-  // Создадим обратное отображение: полное имя -> аббревиатура
+  // Обратное отображение: полное имя -> аббревиатура
   const stateNameToAbbrev = {};
   for (const abbr in stateAbbrevToName) {
     stateNameToAbbrev[stateAbbrevToName[abbr]] = abbr;
   }
 
-  // Функция для определения цвета в зависимости от числа контракторов
-  function getColor(d) {
-    return d > 20 ? '#800026' :
-           d > 15 ? '#BD0026' :
-           d > 10 ? '#E31A1C' :
-           d > 5  ? '#FC4E2A' :
-           d > 2  ? '#FD8D3C' :
-           d > 1  ? '#FEB24C' :
-                    '#FFEDA0';
-  }
-
-  // Функция стиля для слоя штатов
-  function style(feature) {
-    const stateFullName = feature.properties.name;
-    const abbr = stateNameToAbbrev[stateFullName];
-    const count = stateCounts[abbr] || 0;
-    return {
-      fillColor: getColor(count),
-      weight: 2,
-      opacity: 1,
-      color: 'white',
-      dashArray: '3',
-      fillOpacity: 0.7
-    };
-  }
-
-  // Загрузка CSV и обработка
+  // Загрузка и обработка CSV
   document.getElementById('csvFile').addEventListener('change', function (e) {
     const file = e.target.files[0];
     if (!file) return;
 
     // Сброс предыдущих результатов
     allMarkersBounds = [];
-    // Сброс счетчика по штатам
+    // Сброс подсчета контракторов по штатам
     for (const key in stateCounts) { delete stateCounts[key]; }
 
     loading.style.display = 'block';
@@ -169,8 +143,8 @@
         );
         const total = validRows.length;
         let processedCount = 0;
-
-        // Подсчитаем контракторов по штатам (используем все строки, где указан штат)
+        
+        // Подсчет контракторов по штатам (используем все строки, где указан штат)
         results.data.forEach(row => {
           const state = row["State (of service area)"];
           if (state && state.trim() !== "") {
@@ -188,17 +162,16 @@
           mapInitialized = true;
         }
 
-        // Обработка каждого валидного ряда для отображения точек (контракторов)
+        // Обработка строк для добавления точек (контракторов)
         outerLoop:
         for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          // Если в поле несколько ZIP-кодов, разделяем их запятыми
+          // Если в поле несколько ZIP-кодов, разделяем запятыми
           const zipCodes = row["Zip code (of service area)"]
                             .split(",")
                             .map(z => z.trim())
                             .filter(z => z !== "");
-          const radiusMiles = parseFloat(row["Service Radius"]); // не используется для кругов
-
+          // Обработка каждого ZIP
           for (let j = 0; j < zipCodes.length; j++) {
             if (processedCount >= MAX_ZIPS) break outerLoop;
             const zip = zipCodes[j];
@@ -219,9 +192,6 @@
               L.marker([lat, lon]).addTo(map)
                 .bindPopup(`ZIP: ${zip}`);
 
-              // Убираем рисование круга (радиуса)
-              // (код для кругов удалён)
-
             } catch (err) {
               console.error(`Failed to fetch coordinates for ZIP: ${zip}`);
             }
@@ -236,10 +206,37 @@
           map.fitBounds(allMarkersBounds);
         }
 
-        // Добавляем слой плотности по штатам
+        // Добавляем слой плотности по штатам с 20 шагами градации
         fetch("https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json")
           .then(response => response.json())
           .then(geojsonData => {
+            // Вычисляем min и max по количеству контракторов
+            let counts = Object.values(stateCounts);
+            let minCount = Math.min(...counts);
+            let maxCount = Math.max(...counts);
+            // Функция getColor с 20 ступенями: от желтого (hsl(60)) до красного (hsl(0))
+            function getColor(d) {
+              if (maxCount === minCount) return "hsl(60, 100%, 50%)";
+              let step = (maxCount - minCount) / 20;
+              let index = Math.floor((d - minCount) / step);
+              if (index > 19) index = 19;
+              let hue = 60 - (60 / 19) * index; // 60 - желтый, 0 - красный
+              return "hsl(" + hue + ", 100%, 50%)";
+            }
+            // Функция стиля для слоя штатов
+            function style(feature) {
+              const stateFullName = feature.properties.name;
+              const abbr = stateNameToAbbrev[stateFullName];
+              const count = stateCounts[abbr] || 0;
+              return {
+                fillColor: getColor(count),
+                weight: 2,
+                opacity: 1,
+                color: 'white',
+                dashArray: '3',
+                fillOpacity: 0.7
+              };
+            }
             L.geoJson(geojsonData, { style: style }).addTo(map);
           })
           .catch(err => {

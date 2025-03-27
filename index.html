@@ -17,6 +17,11 @@
       margin: 0;
       padding: 0;
     }
+    #versionIndicator {
+      font-size: 2rem;
+      text-align: center;
+      margin-top: 1rem;
+    }
     .upload {
       padding: 1rem;
     }
@@ -67,6 +72,9 @@
 </head>
 <body>
 
+<!-- New emoji indicator for updated version -->
+<div id="versionIndicator">🚀</div>
+
 <div class="upload">
   <input type="file" id="csvFile" accept=".csv" />
 </div>
@@ -76,10 +84,13 @@
   <div class="spinner"></div>
 </div>
 
+<!-- Processed ZIP list -->
 <div id="zipList"></div>
 
+<!-- Button to show the map -->
 <button id="showMapButton">Show on map</button>
 
+<!-- Map container -->
 <div id="map"></div>
 
 <script>
@@ -90,13 +101,13 @@
   const showMapButton = document.getElementById('showMapButton');
   const zipListDiv = document.getElementById('zipList');
   let allMarkersBounds = []; // Array to store coordinates for auto zoom
-  let processedZips = []; // Array to store processed ZIP info
+  let processedZips = []; // Array to store processed ZIP information
 
   document.getElementById('csvFile').addEventListener('change', function (e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Clear previous results
+    // Reset previous results
     zipListDiv.innerHTML = "";
     processedZips = [];
     allMarkersBounds = [];
@@ -123,10 +134,10 @@
           mapInitialized = true;
         }
 
-        // Process each row
+        // Process each CSV row
         for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          // Split ZIP codes by comma in case there are multiple
+          // Split ZIP codes by comma in case there are multiple values
           const zipCodes = row["Zip code (of service area)"]
                             .split(",")
                             .map(z => z.trim())
@@ -147,14 +158,14 @@
               // Save coordinates for auto zoom
               allMarkersBounds.push([lat, lon]);
 
-              // Save info for list display
+              // Save info for display
               processedZips.push({ zip, lat, lon, radiusMiles });
 
               // Add marker with popup to the map
               L.marker([lat, lon]).addTo(map)
                 .bindPopup(`ZIP: ${zip}<br>Radius: ${radiusMiles} mi`);
 
-              // Draw circle for service radius (miles to meters)
+              // Draw circle for service radius (convert miles to meters)
               L.circle([lat, lon], {
                 radius: radiusMiles * 1609.34,
                 color: 'blue',
@@ -169,7 +180,7 @@
 
         loading.style.display = 'none';
 
-        // Build the ZIP list and display it
+        // Build the ZIP list HTML and display it
         if (processedZips.length > 0) {
           let html = "<h3>Processed ZIP Coordinates:</h3><ul>";
           processedZips.forEach(item => {
@@ -181,22 +192,23 @@
           zipListDiv.innerHTML = "<p>No valid ZIP codes processed.</p>";
         }
 
-        showMapButton.style.display = 'inline-block'; // Show the "Show on map" button
+        // Show the "Show on map" button
+        showMapButton.style.display = 'inline-block';
 
         // Auto-fit map bounds if there are markers
-        if (allMarkersBounds.length > 0) {
+        if (allMarkersBounds.length > 0 && mapInitialized) {
           map.fitBounds(allMarkersBounds);
         }
       }
     });
   });
 
+  // Show map on button click
   showMapButton.addEventListener('click', function() {
     document.getElementById('map').style.display = 'block';
     showMapButton.style.display = 'none';
     if (map) {
       map.invalidateSize(); // Recalculate map size for proper display
-      // Optional: re-fit the map bounds after showing the map
       if (allMarkersBounds.length > 0) {
         map.fitBounds(allMarkersBounds);
       }

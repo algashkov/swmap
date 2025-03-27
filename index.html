@@ -67,7 +67,7 @@
 <body>
 
 <!-- Emoji indicator (новая версия) -->
-<div id="versionIndicator">💎</div>
+<div id="versionIndicator">🔧</div>
 
 <!-- Форма загрузки CSV -->
 <div class="upload">
@@ -91,7 +91,7 @@
   const loading = document.getElementById('loading');
   const progressText = document.getElementById('progressText');
   const showMapButton = document.getElementById('showMapButton');
-  let allMarkersBounds = []; // Для автоподгонки масштаба по точкам
+  let allMarkersBounds = []; // Для автоподгонки масштаба по маркерам
   const MAX_ZIPS = 100; // Обрабатываем первые 100 ZIP-кодов
   
   // Подсчет контракторов по штатам
@@ -171,7 +171,6 @@
                             .split(",")
                             .map(z => z.trim())
                             .filter(z => z !== "");
-          // Обработка каждого ZIP
           for (let j = 0; j < zipCodes.length; j++) {
             if (processedCount >= MAX_ZIPS) break outerLoop;
             const zip = zipCodes[j];
@@ -237,7 +236,9 @@
                 fillOpacity: 0.7
               };
             }
-            L.geoJson(geojsonData, { style: style }).addTo(map);
+            const statesLayer = L.geoJson(geojsonData, { style: style });
+            statesLayer.addTo(map);
+            statesLayer.bringToBack(); // Перемещаем слой штатов на задний план
           })
           .catch(err => {
             console.error("Error loading US States GeoJSON:", err);

@@ -2,15 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ZIP Radius Map</title>
+  <title>Contractor Density Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Leaflet CSS and JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- PapaParse для обработки CSV -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <style>
     #map {
       height: 90vh;
-      display: none; /* Hidden by default */
+      display: none; /* Initially hidden */
     }
     body {
       font-family: sans-serif;
@@ -64,8 +66,8 @@
 </head>
 <body>
 
-<!-- Emoji indicator (new version) -->
-<div id="versionIndicator">🌟</div>
+<!-- Emoji indicator (новая версия) -->
+<div id="versionIndicator">🔥</div>
 
 <!-- Upload form -->
 <div class="upload">
@@ -89,15 +91,70 @@
   const loading = document.getElementById('loading');
   const progressText = document.getElementById('progressText');
   const showMapButton = document.getElementById('showMapButton');
-  let allMarkersBounds = []; // Array to store coordinates for auto zoom
+  let allMarkersBounds = []; // For markers auto-zoom
   const MAX_ZIPS = 100; // Limit processing to first 100 ZIP codes
+  
+  // Для расчёта плотности контракторов по штатам
+  const stateCounts = {}; // Будет вида: { "TX": 5, "SC": 3, ... }
 
+  // Маппинг из аббревиатур в полные названия штатов (GeoJSON использует полные имена)
+  const stateAbbrevToName = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+    "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+    "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
+    "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+    "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+    "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+    "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+    "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+    "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
+    "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
+    "WI": "Wisconsin", "WY": "Wyoming"
+  };
+
+  // Создадим обратное отображение: полное имя -> аббревиатура
+  const stateNameToAbbrev = {};
+  for (const abbr in stateAbbrevToName) {
+    stateNameToAbbrev[stateAbbrevToName[abbr]] = abbr;
+  }
+
+  // Функция для определения цвета в зависимости от числа контракторов
+  function getColor(d) {
+    return d > 20 ? '#800026' :
+           d > 15 ? '#BD0026' :
+           d > 10 ? '#E31A1C' :
+           d > 5  ? '#FC4E2A' :
+           d > 2  ? '#FD8D3C' :
+           d > 1  ? '#FEB24C' :
+                    '#FFEDA0';
+  }
+
+  // Функция стиля для слоя штатов
+  function style(feature) {
+    const stateFullName = feature.properties.name;
+    const abbr = stateNameToAbbrev[stateFullName];
+    const count = stateCounts[abbr] || 0;
+    return {
+      fillColor: getColor(count),
+      weight: 2,
+      opacity: 1,
+      color: 'white',
+      dashArray: '3',
+      fillOpacity: 0.7
+    };
+  }
+
+  // Загрузка CSV и обработка
   document.getElementById('csvFile').addEventListener('change', function (e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Reset previous results
+    // Сброс предыдущих результатов
     allMarkersBounds = [];
+    // Сброс счетчика по штатам
+    for (const key in stateCounts) { delete stateCounts[key]; }
 
     loading.style.display = 'block';
     progressText.textContent = '';
@@ -113,7 +170,16 @@
         const total = validRows.length;
         let processedCount = 0;
 
-        // Initialize map (hidden initially)
+        // Подсчитаем контракторов по штатам (используем все строки, где указан штат)
+        results.data.forEach(row => {
+          const state = row["State (of service area)"];
+          if (state && state.trim() !== "") {
+            const st = state.trim();
+            stateCounts[st] = (stateCounts[st] || 0) + 1;
+          }
+        });
+
+        // Инициализация карты (скрыта до нажатия кнопки)
         if (!mapInitialized) {
           map = L.map('map').setView([39.8283, -98.5795], 4);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -122,20 +188,21 @@
           mapInitialized = true;
         }
 
+        // Обработка каждого валидного ряда для отображения точек (контракторов)
         outerLoop:
         for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          // Split ZIP codes by comma in case there are multiple values
+          // Если в поле несколько ZIP-кодов, разделяем их запятыми
           const zipCodes = row["Zip code (of service area)"]
                             .split(",")
                             .map(z => z.trim())
                             .filter(z => z !== "");
-          const radiusMiles = parseFloat(row["Service Radius"]);
+          const radiusMiles = parseFloat(row["Service Radius"]); // не используется для кругов
 
           for (let j = 0; j < zipCodes.length; j++) {
             if (processedCount >= MAX_ZIPS) break outerLoop;
             const zip = zipCodes[j];
-            progressText.textContent = `Processing ZIP ${processedCount + 1} of ${MAX_ZIPS} (${zip})...`;
+            progressText.textContent = `Processing contractor ${processedCount + 1} of ${MAX_ZIPS} (${zip})...`;
 
             try {
               const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
@@ -144,20 +211,16 @@
               const lat = parseFloat(data.places[0].latitude);
               const lon = parseFloat(data.places[0].longitude);
 
-              // Save coordinates for auto zoom
+              // Сохраняем координаты для автоподгонки карты
               allMarkersBounds.push([lat, lon]);
               processedCount++;
 
-              // Add marker with popup to the map
+              // Добавляем маркер (точку) для контракторa
               L.marker([lat, lon]).addTo(map)
-                .bindPopup(`ZIP: ${zip}<br>Radius: ${radiusMiles} mi`);
+                .bindPopup(`ZIP: ${zip}`);
 
-              // Draw circle for service radius (convert miles to meters)
-              L.circle([lat, lon], {
-                radius: radiusMiles * 1609.34,
-                color: 'blue',
-                fillOpacity: 0.2
-              }).addTo(map);
+              // Убираем рисование круга (радиуса)
+              // (код для кругов удалён)
 
             } catch (err) {
               console.error(`Failed to fetch coordinates for ZIP: ${zip}`);
@@ -168,20 +231,30 @@
         loading.style.display = 'none';
         showMapButton.style.display = 'inline-block';
 
-        // Auto-fit map bounds if there are markers
+        // Автоподгонка карты по маркерам
         if (allMarkersBounds.length > 0 && mapInitialized) {
           map.fitBounds(allMarkersBounds);
         }
+
+        // Добавляем слой плотности по штатам
+        fetch("https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json")
+          .then(response => response.json())
+          .then(geojsonData => {
+            L.geoJson(geojsonData, { style: style }).addTo(map);
+          })
+          .catch(err => {
+            console.error("Error loading US States GeoJSON:", err);
+          });
       }
     });
   });
 
-  // Show map on button click
+  // При нажатии на кнопку показываем карту
   showMapButton.addEventListener('click', function() {
     document.getElementById('map').style.display = 'block';
     showMapButton.style.display = 'none';
     if (map) {
-      map.invalidateSize(); // Recalculate map size for proper display
+      map.invalidateSize(); // Пересчитываем размер карты
       if (allMarkersBounds.length > 0) {
         map.fitBounds(allMarkersBounds);
       }

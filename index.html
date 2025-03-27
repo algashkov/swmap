@@ -105,33 +105,41 @@
           mapInitialized = true;
         }
 
+        // Process each row
         for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          const zip = row["Zip code (of service area)"];
+          // Split ZIP codes by comma in case there are multiple
+          const zipCodes = row["Zip code (of service area)"]
+                            .split(",")
+                            .map(z => z.trim())
+                            .filter(z => z !== "");
           const radiusMiles = parseFloat(row["Service Radius"]);
 
-          progressText.textContent = ` Processing ZIP ${i + 1} of ${total}...`;
+          for (let j = 0; j < zipCodes.length; j++) {
+            const zip = zipCodes[j];
+            progressText.textContent = ` Processing ZIP ${i + 1} of ${total} (${zip})...`;
 
-          try {
-            const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
-            if (!res.ok) continue;
-            const data = await res.json();
-            const lat = parseFloat(data.places[0].latitude);
-            const lon = parseFloat(data.places[0].longitude);
+            try {
+              const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
+              if (!res.ok) continue;
+              const data = await res.json();
+              const lat = parseFloat(data.places[0].latitude);
+              const lon = parseFloat(data.places[0].longitude);
 
-            // Add marker with popup
-            L.marker([lat, lon]).addTo(map)
-              .bindPopup(`ZIP: ${zip}<br>Radius: ${radiusMiles} mi`);
+              // Add marker with popup
+              L.marker([lat, lon]).addTo(map)
+                .bindPopup(`ZIP: ${zip}<br>Radius: ${radiusMiles} mi`);
 
-            // Draw radius circle (miles to meters conversion)
-            L.circle([lat, lon], {
-              radius: radiusMiles * 1609.34,
-              color: 'blue',
-              fillOpacity: 0.2
-            }).addTo(map);
+              // Draw circle for service radius (convert miles to meters)
+              L.circle([lat, lon], {
+                radius: radiusMiles * 1609.34,
+                color: 'blue',
+                fillOpacity: 0.2
+              }).addTo(map);
 
-          } catch (err) {
-            console.error(`Failed to fetch coordinates for ZIP: ${zip}`);
+            } catch (err) {
+              console.error(`Failed to fetch coordinates for ZIP: ${zip}`);
+            }
           }
         }
 

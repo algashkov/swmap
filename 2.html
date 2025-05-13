@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Тестовая страница подрядчика</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
+  </style>
+  <script>
+    function saveParams() {
+      const params = new URLSearchParams(window.location.search);
+      const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid'];
+      const saved = {};
+
+      keys.forEach(key => {
+        const val = params.get(key);
+        if (val) {
+          localStorage.setItem(key, val);
+          saved[key] = val;
+        }
+      });
+
+      // Отображаем в отладке
+      const debug = document.getElementById('debug');
+      debug.textContent = JSON.stringify(saved, null, 2);
+    }
+
+    function loadStoredParams() {
+      const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid'];
+      const stored = {};
+      keys.forEach(key => {
+        const val = localStorage.getItem(key);
+        if (val) stored[key] = val;
+      });
+      const storedBox = document.getElementById('stored');
+      storedBox.textContent = JSON.stringify(stored, null, 2);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      saveParams();
+      loadStoredParams();
+    });
+  </script>
+</head>
+<body>
+  <h1>Сайт подрядчика (тест)</h1>
+  <p>🔒 UTM-метки и gclid сохранены в localStorage.</p>
+
+  <h2>📥 Что пришло из URL:</h2>
+  <pre id="debug">Загрузка…</pre>
+
+  <h2>💾 Что в localStorage:</h2>
+  <pre id="stored">Загрузка…</pre>
+
+  <br>
+  <a href="https://your-domain.com/profile.html">Перейти на профиль</a>
+</body>
+</html>

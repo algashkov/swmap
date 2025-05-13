@@ -1,188 +1,59 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Contractor Heatmap with Custom Gradient</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- Leaflet CSS and JS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- PapaParse for CSV processing -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-  <!-- Leaflet.heat plugin for heatmap -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+  <meta charset="UTF-8">
+  <title>Тестовая страница подрядчика</title>
   <style>
-    #map {
-      height: 90vh;
-      display: none;
-    }
-    body {
-      font-family: sans-serif;
-      margin: 0;
-      padding: 0;
-    }
-    #versionIndicator {
-      font-size: 2rem;
-      text-align: center;
-      margin-top: 1rem;
-    }
-    .upload {
-      padding: 1rem;
-      text-align: center;
-    }
-    #loading {
-      display: none;
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #fff;
-      padding: 10px 20px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      z-index: 1000;
-    }
-    .spinner {
-      display: inline-block;
-      width: 20px;
-      height: 20px;
-      border: 3px solid #ccc;
-      border-top-color: #333;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-left: 10px;
-      vertical-align: middle;
-    }
-    #showHeatmapButton {
-      display: none;
-      margin: 1rem auto;
-      padding: 10px 20px;
-      font-size: 16px;
-      cursor: pointer;
-      display: block;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    body { font-family: sans-serif; padding: 20px; }
+    pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
   </style>
+  <script>
+    function saveParams() {
+      const params = new URLSearchParams(window.location.search);
+      const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid'];
+      const saved = {};
+
+      keys.forEach(key => {
+        const val = params.get(key);
+        if (val) {
+          localStorage.setItem(key, val);
+          saved[key] = val;
+        }
+      });
+
+      // Отображаем в отладке
+      const debug = document.getElementById('debug');
+      debug.textContent = JSON.stringify(saved, null, 2);
+    }
+
+    function loadStoredParams() {
+      const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid'];
+      const stored = {};
+      keys.forEach(key => {
+        const val = localStorage.getItem(key);
+        if (val) stored[key] = val;
+      });
+      const storedBox = document.getElementById('stored');
+      storedBox.textContent = JSON.stringify(stored, null, 2);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      saveParams();
+      loadStoredParams();
+    });
+  </script>
 </head>
 <body>
+  <h1>Сайт подрядчика (тест)</h1>
+  <p>🔒 UTM-метки и gclid сохранены в localStorage.</p>
 
-<!-- Version indicator (new icon) -->
-<div id="versionIndicator">🌈</div>
+  <h2>📥 Что пришло из URL:</h2>
+  <pre id="debug">Загрузка…</pre>
 
-<!-- CSV upload form -->
-<div class="upload">
-  <label for="csvFile">Upload Contractors CSV (with "Zip code (of service area)"):</label>
-  <input type="file" id="csvFile" accept=".csv" />
-</div>
+  <h2>💾 Что в localStorage:</h2>
+  <pre id="stored">Загрузка…</pre>
 
-<div id="loading">
-  Loading... <span id="progressText"></span>
-  <div class="spinner"></div>
-</div>
-
-<!-- Button to show heatmap -->
-<button id="showHeatmapButton">Show Heatmap</button>
-
-<!-- Map container -->
-<div id="map"></div>
-
-<script>
-  let mapInitialized = false;
-  let map;
-  const loading = document.getElementById('loading');
-  const progressText = document.getElementById('progressText');
-  const showHeatmapButton = document.getElementById('showHeatmapButton');
-  
-  // Limit processing to first 100 rows
-  const MAX_ROWS = 100;
-  const heatPoints = []; // Array for heatmap points: [lat, lon, intensity]
-  const boundsArray = []; // For auto-zooming the map
-  
-  // Function to fetch coordinates for a given ZIP using Zippopotam.us API
-  async function getCoordinates(zip) {
-    try {
-      const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const lat = parseFloat(data.places[0].latitude);
-      const lon = parseFloat(data.places[0].longitude);
-      return { lat, lon };
-    } catch (err) {
-      console.error(`Error fetching ZIP ${zip}:`, err);
-      return null;
-    }
-  }
-  
-  // Process CSV file
-  document.getElementById('csvFile').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    // Reset previous data
-    heatPoints.length = 0;
-    boundsArray.length = 0;
-    
-    loading.style.display = 'block';
-    progressText.textContent = 'Processing...';
-    
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      preview: MAX_ROWS, // Process only first 100 rows
-      complete: async function(results) {
-        const rows = results.data; // Already max 100 rows
-        let processedCount = 0;
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
-          if (!row["Zip code (of service area)"]) continue;
-          // If multiple ZIP codes in one field, take the first
-          const zip = row["Zip code (of service area)"].split(",")[0].trim();
-          progressText.textContent = `Processing ${processedCount + 1} of ${rows.length} (${zip})...`;
-          const coords = await getCoordinates(zip);
-          if (coords) {
-            // Add point with intensity 1
-            heatPoints.push([coords.lat, coords.lon, 1]);
-            boundsArray.push([coords.lat, coords.lon]);
-            processedCount++;
-          }
-        }
-        loading.style.display = 'none';
-        showHeatmapButton.style.display = 'block';
-      }
-    });
-  });
-  
-  // On button click, show map with heatmap layer
-  showHeatmapButton.addEventListener('click', function() {
-    document.getElementById('map').style.display = 'block';
-    showHeatmapButton.style.display = 'none';
-    
-    if (!mapInitialized) {
-      map = L.map('map').setView([39.8283, -98.5795], 4);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
-      mapInitialized = true;
-    }
-    
-    // Create heatmap layer with custom gradient: blue at 0, red at maximum
-    const heatLayer = L.heatLayer(heatPoints, {
-      radius: 25,
-      blur: 15,
-      maxZoom: 17,
-      gradient: { 0: 'blue', 1: 'red' }
-    }).addTo(map);
-    
-    // Auto-fit map bounds if there are points
-    if (boundsArray.length > 0) {
-      map.fitBounds(boundsArray);
-    }
-  });
-</script>
-
+  <br>
+  <a href="https://your-domain.com/profile.html">Перейти на профиль</a>
 </body>
 </html>

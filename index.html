@@ -24,20 +24,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
  
 <a href="#" onclick="goToProfile()">Перейти на профиль</a>
 
-<script>
-function goToProfile() {
-  const baseUrl = "https://contractorfinder.tilda.ws/gtm";
-  if (typeof gtag !== 'undefined' && gtag.get) {
-    gtag('get', 'G-6EH81ZP4JK', 'linker_param', function(linkerParam) {
-      const url = linkerParam ? `${baseUrl}?${linkerParam}` : baseUrl;
-      window.open(url, '_blank');
-    });
-  } else {
-    // fallback — если GA ещё не загрузился
-    window.open(baseUrl, '_blank');
-  }
-}
+
 </script>
-  16 you
+  17
 </body>
 </html>

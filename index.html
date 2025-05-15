@@ -7,53 +7,20 @@
     body { font-family: sans-serif; padding: 20px; }
     pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
   </style>
-  <script>
-    function saveParams() {
-      const params = new URLSearchParams(window.location.search);
-      const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid'];
-      const saved = {};
-
-      keys.forEach(key => {
-        const val = params.get(key);
-        if (val) {
-          localStorage.setItem(key, val);
-          saved[key] = val;
-        }
-      });
-
-      // Отображаем в отладке
-      const debug = document.getElementById('debug');
-      debug.textContent = JSON.stringify(saved, null, 2);
-    }
-
-    function loadStoredParams() {
-      const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid'];
-      const stored = {};
-      keys.forEach(key => {
-        const val = localStorage.getItem(key);
-        if (val) stored[key] = val;
-      });
-      const storedBox = document.getElementById('stored');
-      storedBox.textContent = JSON.stringify(stored, null, 2);
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-      saveParams();
-      loadStoredParams();
-    });
-  </script>
+  <!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-PMK28ZRM');</script>
+<!-- End Google Tag Manager -->
 </head>
 <body>
   <h1>Сайт подрядчика (тест)</h1>
-  <p>🔒 UTM-метки и gclid сохранены в localStorage.</p>
-
-  <h2>📥 Что пришло из URL:</h2>
-  <pre id="debug">Загрузка…</pre>
-
-  <h2>💾 Что в localStorage:</h2>
-  <pre id="stored">Загрузка…</pre>
-
-  <br>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PMK28ZRM"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
   <a href="https://contractorfinder.tilda.ws/gtm">Перейти на профиль</a>
 
 

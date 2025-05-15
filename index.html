@@ -22,9 +22,22 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <!-- End Google Tag Manager (noscript) -->
  
-<a href="https://contractorfinder.tilda.ws/gtm" target="_blank">
-  Перейти на профиль
-</a>
-  15
+<a href="#" onclick="goToProfile()">Перейти на профиль</a>
+
+<script>
+function goToProfile() {
+  const baseUrl = "https://contractorfinder.tilda.ws/gtm";
+  if (typeof gtag !== 'undefined' && gtag.get) {
+    gtag('get', 'G-6EH81ZP4JK', 'linker_param', function(linkerParam) {
+      const url = linkerParam ? `${baseUrl}?${linkerParam}` : baseUrl;
+      window.open(url, '_blank');
+    });
+  } else {
+    // fallback — если GA ещё не загрузился
+    window.open(baseUrl, '_blank');
+  }
+}
+</script>
+  16
 </body>
 </html>
